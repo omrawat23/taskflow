@@ -10,3 +10,4 @@ test-results/
 storybook-static/
 .DS_Store
 .devdb/
+deploy/prod.env

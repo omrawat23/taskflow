@@ -1,0 +1,64 @@
+# Production stack: docker compose -f deploy/docker-compose.prod.yml --env-file deploy/prod.env -p taskflow up -d --build
+# The web container also joins an external network so a Cloudflare Tunnel connector can reach it.
+x-restart: &restart
+  restart: unless-stopped
+
+x-api: &api
+  <<: *restart
+  build: { context: .., dockerfile: apps/api/Dockerfile }
+  env_file: prod.env
+  environment:
+    NODE_ENV: production
+    MONGO_URI: mongodb://mongo:27017/taskflow?replicaSet=rs0&directConnection=true
+    REDIS_URL: redis://redis:6379
+
+services:
+  mongo:
+    <<: *restart
+    image: mongo:8
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }"
+      interval: 5s
+      retries: 20
+    volumes: [mongo-data:/data/db]
+
+  redis:
+    <<: *restart
+    image: redis:8-alpine
+
+  migrate:
+    <<: *api
+    restart: "no"
+    command: ["node", "dist/migrations/run.js"]
+    depends_on: { mongo: { condition: service_healthy } }
+
+  api:
+    <<: *api
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+
+  worker:
+    <<: *api
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    <<: *restart
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    ports: ["127.0.0.1:8090:8080"] # localhost only, for checks over SSH
+    depends_on: [api]
+    networks:
+      default: {}
+      tunnel: { aliases: [taskflow-web] }
+
+networks:
+  tunnel:
+    external: true
+    name: ${TUNNEL_NETWORK:-tradesimulator_default}
+
+volumes:
+  mongo-data:

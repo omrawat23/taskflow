@@ -318,6 +318,9 @@ Current status: **58 tests pass** (37 API + 21 web). Format, lint, strict typech
   run as a single instance.
 - **Web**: `pnpm --filter @taskflow/web build` produces static files in `apps/web/dist`. Serve them
   behind the same domain as the API (reverse proxy `/api`) so cookies stay first-party.
+- **Live deploy**: `deploy/docker-compose.prod.yml` runs MongoDB, Redis, a one-shot migration, the API,
+  the worker and an nginx web container (static app + `/api` proxy). Copy `deploy/prod.env.example`
+  to `deploy/prod.env`, then `docker compose -f deploy/docker-compose.prod.yml -p taskflow up -d --build`.
 - **Production must-haves**: `NODE_ENV=production` (secure cookies), `REDIS_URL`, a strong
   `JWT_ACCESS_SECRET`, and `OTEL_EXPORTER_OTLP_ENDPOINT` if you want traces and metrics.
 
